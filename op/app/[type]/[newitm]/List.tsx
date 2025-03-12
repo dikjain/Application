@@ -1,14 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Modal, ScrollView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { GetContent } from '../../(api)/extract.api';
+import { deleteTodoById } from '../../(api)/todo.api';
+import { deleteNoteById } from '../../(api)/note.api';
 import Animated, {
   FadeIn,
   FadeInDown,
   Layout,
   ZoomIn,
-  SlideInRight
+  SlideInRight,
+  FlipInXDown
 } from 'react-native-reanimated';
 
 interface ListItem {
@@ -30,49 +33,42 @@ interface BlurFadeProps {
   yOffset?: number;
 }
 
-const BlurFade = ({
-  children,
-  style,
-  delay = 0,
-}: BlurFadeProps) => {
-  return (
-    <Animated.View
-      entering={FadeInDown.delay(delay).springify()}
-      layout={Layout.springify()}
-      style={[{
-        borderWidth: 1,
-        borderColor: '#00f2fe',
-        borderRadius: 16,
-        shadowColor: '#00f2fe',
-        shadowOffset: {
-          width: 0,
-          height: 0,
-        },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
-        elevation: 5,
-      }, style]}
-    >
-      {children}
-    </Animated.View>
-  );
+// Array of neon colors
+const neonColors = [
+  '#FF1493', // Deep Pink
+  '#00FF00', // Neon Green  
+  '#FF00FF', // Magenta
+  '#00FFFF', // Cyan
+  '#FFFF00', // Yellow
+  '#FF4500', // Orange Red
+  '#7FFF00', // Chartreuse
+  '#FF69B4', // Hot Pink
+  '#00FA9A', // Medium Spring Green
+  '#40E0D0', // Turquoise
+];
+
+const getRandomNeonColor = () => {
+  return neonColors[Math.floor(Math.random() * neonColors.length)];
 };
 
 const SkeletonItem = () => {
+  const neonColor = useMemo(() => getRandomNeonColor(), []);
+  
   return (
     <View style={[styles.skeletonItem, {
-      backgroundColor: '#1a1a2e',
+      backgroundColor: 'rgba(0,0,0,0.8)',
       borderRadius: 16,
-      borderWidth: 1,
-      borderColor: '#00f2fe',
-      shadowColor: '#00f2fe',
+      borderWidth: 2,
+      borderColor: neonColor,
+      shadowColor: neonColor,
       shadowOffset: {
         width: 0,
         height: 0,
       },
-      shadowOpacity: 0.3,
-      shadowRadius: 4,
-      elevation: 5,
+      shadowOpacity: 0.8,
+      shadowRadius: 8,
+      marginHorizontal : 20,
+      elevation: 8,
     }]}>
       <View style={[styles.skeletonCircle, { backgroundColor: '#2d2d44' }]} />
       <View style={styles.skeletonContent}>
@@ -88,9 +84,22 @@ const List = () => {
   const [items, setItems] = useState<ListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [newItemAdded, setNewItemAdded] = useState(false);
+  const [selectedNote, setSelectedNote] = useState<ListItem | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [showAll, setShowAll] = useState(true);
   const router = useRouter();
   const { type, newitm } = useLocalSearchParams();
   const listType = type || 'todo';
+  const itemColors = useMemo(() => items.map(() => getRandomNeonColor()), [items.length]);
+
+
+
+  const filteredItems = useMemo(() => {
+    if (listType === 'todo' && !showAll) {
+      return items.filter(item => !item.completed);
+    }
+    return items;
+  }, [items, showAll, listType]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -133,9 +142,23 @@ const List = () => {
     fetchData();
   }, [listType, newitm]);
 
+  const handleDelete = async (id: string) => {
+    try {
+      if (listType === 'todo') {
+        await deleteTodoById(id);
+      } else {
+        await deleteNoteById(id);
+      }
+      setItems(items.filter(item => item.id !== id));
+    } catch (error) {
+      console.error(`Error deleting ${listType}:`, error);
+    }
+  };
+
   const renderItem = ({ item, index }: { item: ListItem; index: number }) => {
     const shouldAnimate = newitm === 'yes' && index === 0 && newItemAdded;
     const animationDelay = shouldAnimate ? 0 : index * 100;
+    const neonColor = itemColors[index];
 
     if (listType === 'todo') {
       return (
@@ -145,13 +168,15 @@ const List = () => {
           style={{
             marginVertical: 6,
             marginHorizontal: 16,
-            backgroundColor: '#1a1a2e',
+            backgroundColor: 'rgba(0,0,0,0.8)',
             borderRadius: 12,
-            shadowColor: item.completed ? '#4834d4' : '#00f2fe',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.15,
-            shadowRadius: 8,
-            elevation: 3,
+            borderWidth: 2,
+            borderColor: neonColor,
+            shadowColor: neonColor,
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: 0.8,
+            shadowRadius: 12,
+            elevation: 8,
           }}
         >
           <TouchableOpacity 
@@ -166,10 +191,16 @@ const List = () => {
               entering={item.completed ? ZoomIn : undefined}
               style={{marginRight: 12}}
             >
-              <Ionicons 
-                name={item.completed ? "checkmark-circle" : "ellipse-outline"} 
+              <MaterialCommunityIcons 
+                name={item.completed ? "checkbox-marked-circle" : "checkbox-blank-circle-outline"} 
                 size={24} 
-                color={item.completed ? "#4834d4" : "#00f2fe"}
+                color={neonColor}
+                style={{
+                  shadowColor: neonColor,
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.5,
+                  shadowRadius: 6,
+                }}
               />
             </Animated.View>
             
@@ -177,16 +208,17 @@ const List = () => {
               <Text style={{
                 fontSize: 16,
                 fontWeight: '500',
-                color: item.completed ? '#666' : '#fff',
+                color: neonColor,
+                fontFamily: 'Orbitron',
                 textDecorationLine: item.completed ? 'line-through' : 'none',
               }}>
                 {item.title || item.name}
               </Text>
               
-              {item.description && (
+              {item.description !== undefined && item.description !== '' && (
                 <Text style={{
                   fontSize: 14,
-                  color: item.completed ? '#555' : '#a8a8b3',
+                  color: '#fff',
                   marginTop: 4,
                 }}>
                   {item.description}
@@ -196,44 +228,91 @@ const List = () => {
               {item.due_date && item.due_time && (
                 <Text style={{
                   fontSize: 12,
-                  color: item.completed ? '#555' : '#00f2fe',
+                  color: neonColor,
                   marginTop: 6,
                   opacity: 0.8,
                 }}>
-                  {item.due_date} • {item.due_time}
+                  <FontAwesome5 name="clock" size={12} color={neonColor} /> {item.due_date} • {item.due_time}
                 </Text>
               )}
             </View>
+
+            <TouchableOpacity
+              onPress={() => handleDelete(item.id)}
+              style={{padding: 8}}
+            >
+              <MaterialCommunityIcons 
+                name="delete-outline" 
+                size={24} 
+                color="#FF0000"
+                style={{
+                  shadowColor: '#FF0000',
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.5,
+                  shadowRadius: 6,
+                }}
+              />
+            </TouchableOpacity>
           </TouchableOpacity>
         </Animated.View>
       );
     } else {
       return (
         <Animated.View
-          entering={SlideInRight.delay(animationDelay).springify()}
+          entering={FlipInXDown.delay(animationDelay).springify()}
           layout={Layout.springify()}
           style={{
-            borderWidth: 1,
+            borderWidth: 2,
             borderRadius: 16,
-            borderColor: '#00f2fe',
-            shadowColor: '#00f2fe',
+            borderColor: neonColor,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            shadowColor: neonColor,
             shadowOffset: {
               width: 0,
               height: 0,
             },
-            shadowOpacity: 0.3,
-            shadowRadius: 4,
-            elevation: 5,
+            shadowOpacity: 0.8,
+            shadowRadius: 8,
+            elevation: 8,
+            marginVertical : 4,
+            marginHorizontal : 12,
           }}
         >
-          <TouchableOpacity style={[styles.noteItem, { backgroundColor: '#1a1a2e' }]}>
+          <TouchableOpacity 
+            style={styles.noteItem}
+            onPress={() => {
+              setSelectedNote(item);
+              setModalVisible(true);
+            }}
+          >
             <View style={styles.noteContent}>
-              <Text style={[styles.noteTitle, { color: '#fff' }]}>{item.title}</Text>
-              <Text style={[styles.noteText, { color: '#a8a8b3' }]} numberOfLines={2}>
-                {item.content}
+              <Text style={{
+                fontSize: 17,
+                fontWeight: '600',
+                color: neonColor,
+                marginBottom: 4,
+                fontFamily: 'Orbitron',
+              }}>{item.title}</Text>
+              <Text style={[styles.noteText, { color: '#fff' }]} numberOfLines={2}>
+                {item.description}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={24} color="#00f2fe" />
+            <TouchableOpacity
+              onPress={() => handleDelete(item.id)}
+              style={{padding: 8}}
+            >
+              <MaterialCommunityIcons 
+                name="delete-outline" 
+                size={24} 
+                color="#FF0000"
+                style={{
+                  shadowColor: '#FF0000',
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.5,
+                  shadowRadius: 6,
+                }}
+              />
+            </TouchableOpacity>
           </TouchableOpacity>
         </Animated.View>
       );
@@ -241,6 +320,7 @@ const List = () => {
   };
 
   const toggleTodoComplete = (id: string) => {
+    
     setItems(items.map(item => 
       item.id === id ? { ...item, completed: !item.completed } : item
     ));
@@ -248,16 +328,18 @@ const List = () => {
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: '#0f0f1a' }]}>
+      <View style={[styles.container, { backgroundColor: '#000' }]}>
         <Animated.View entering={FadeIn.duration(500)}>
           <View style={styles.headerContainer}>
-            <TouchableOpacity 
+            <TouchableOpacity   
               style={styles.backButton}
               onPress={() => router.back()}
             >
-              <Ionicons name="arrow-back" size={24} color="#00f2fe" />
+              <MaterialCommunityIcons name="arrow-left" size={24} color="#00f2fe" />
             </TouchableOpacity>
-            <Text style={[styles.header, { color: '#fff' }]}>
+            <Text style={[styles.header, { 
+              color: '#00f2fe',
+            }]}>
               {listType === 'todo' ? '✨ Tasks' : '📝 Notes'}
             </Text>
           </View>
@@ -276,21 +358,114 @@ const List = () => {
 
   return (
     <View style={[styles.container, { backgroundColor: '#000' }]}>
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          paddingHorizontal: 20,
+        }}>
+          <View style={{
+            maxHeight: '80%',
+            width: '100%',
+            backgroundColor: '#000',
+            borderRadius: 20,
+            borderWidth: 2,
+            borderColor: '#00f2fe',
+            shadowColor: '#00f2fe',
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: 0.8,
+            shadowRadius: 10,
+          }}>
+            <ScrollView 
+              style={{ padding: 20 , paddingBottom : 0 }}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={{
+                fontSize: 24,
+                fontWeight: '600',
+                color: '#00f2fe',
+                marginBottom: 15,
+                fontFamily: 'Orbitron',
+              }}>{selectedNote?.title}</Text>
+              <Text style={{
+                fontSize: 16,
+                color: '#fff',
+                marginBottom: 20,
+                lineHeight: 24,
+              }}>{selectedNote?.description}</Text>
+            </ScrollView>
+            <TouchableOpacity
+              onPress={() => setModalVisible(false)}
+              style={{
+                alignSelf: 'flex-end',
+                backgroundColor: 'rgba(0,242,254,0.2)',
+                padding: 10,
+                borderRadius: 10,
+                margin: 20,
+              }}
+            >
+              <Text style={{
+                color: '#00f2fe',
+                fontFamily: 'Orbitron',
+              }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <Animated.View entering={FadeIn.duration(500)}>
         <View style={styles.headerContainer}>
           <TouchableOpacity 
             style={styles.backButton}
             onPress={() => router.back()}
           >
-            <Ionicons name="arrow-back" size={24} color="#00f2fe" />
+            <MaterialCommunityIcons 
+              name="arrow-left" 
+              size={24} 
+              color="#00f2fe"
+              style={{
+                shadowColor: '#00f2fe',
+                shadowOffset: { width: 0, height: 0 },
+                shadowOpacity: 0.5,
+                shadowRadius: 6,
+              }}
+            />
           </TouchableOpacity>
-          <Text style={[styles.header, { color: '#fff' }]}>
+          <Text style={[styles.header, { 
+            color: '#00f2fe',
+          }]}>
             {listType === 'todo' ? '✨ Tasks' : '📝 Notes'}
           </Text>
+          {listType === 'todo' && (
+            <TouchableOpacity
+              onPress={() => setShowAll(!showAll)}
+              style={{
+                marginLeft: 'auto',
+                backgroundColor: 'rgba(0,242,254,0.2)',
+                padding: 8,
+                borderRadius: 8,
+              }}
+            >
+              <Text style={{
+                color: '#00f2fe',
+                fontFamily: 'Orbitron',
+                fontSize: 12,
+              }}>
+                {showAll ? 'Show Active' : 'Show All'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </Animated.View>
       <FlatList
-        data={items}
+        data={filteredItems}
         renderItem={renderItem}
         ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
         keyExtractor={item => item.id}
@@ -309,6 +484,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8F9FA',
     padding: 20,
+    paddingTop : 40,
   },
   headerContainer: {
     flexDirection: 'row',
@@ -326,7 +502,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   list: {
+    paddingTop :10,
     flex: 1,
+    // padding:10
   },
   listContent: {
     paddingBottom: 20,
@@ -372,7 +550,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: '#FFFFFF',
     borderRadius: 16,
   },
   noteContent: {

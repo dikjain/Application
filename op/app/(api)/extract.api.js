@@ -4,7 +4,6 @@ const GenerateContent = async (isTodo, text) => {
 
 
     try {
-        console.log(isTodo , text)
         const response = await axios.post("http://192.168.29.175:3000/extract/Ai-generate",
             { isTodo, text },
             { headers: { 'Content-Type': 'application/json' } }
@@ -14,7 +13,6 @@ const GenerateContent = async (isTodo, text) => {
             throw new Error('Network response was not ok');
         }
 
-        console.log(response.data);
 
     } catch (error) {
         console.error('Error generating content:', error);

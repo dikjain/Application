@@ -4,7 +4,7 @@ import { Audio } from 'expo-av';
 import { uploadAudio, isTodo } from '../utils/AudioUpload';
 import { GenerateContent } from './(api)/extract.api';
 import axios from 'axios';
-import { AntDesign, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import { AntDesign, MaterialCommunityIcons, MaterialIcons, Feather } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import linearGradient, { LinearGradient } from "expo-linear-gradient"
 import { useRouter, usePathname } from 'expo-router';
@@ -19,7 +19,11 @@ import Animated, {
   withSequence,
   withTiming,
   withDelay,
-  interpolateColor
+  interpolateColor,
+  FadeIn,
+  FadeOut,
+  SlideInDown,
+  SlideOutDown
 } from 'react-native-reanimated';
 
 const { width, height } = Dimensions.get('window');
@@ -39,12 +43,32 @@ const Page = () => {
   const [contentType, setContentType] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStep, setProcessingStep] = useState(0); // 0: recognizing, 1: processing, 2: creating
   const webViewRef = useRef(null);
 
   const scale = useSharedValue(1);
   const pulseAnim = useSharedValue(1);
   const colorProgress = useSharedValue(0);
   const robotScale = useSharedValue(1);
+  const popupScale = useSharedValue(1);
+  const deleteScale = useSharedValue(0);
+
+  useEffect(() => {
+    if (isRecording) {
+      deleteScale.value = withSpring(1);
+    } else {
+      deleteScale.value = withSpring(0);
+    }
+  }, [isRecording]);
+
+  useEffect(() => {
+    if (showPopup) {
+      popupScale.value = withSequence(
+        withSpring(1.1),
+        withSpring(1)
+      );
+    }
+  }, [showPopup]);
 
   useEffect(() => {
     colorProgress.value = withRepeat(
@@ -71,6 +95,19 @@ const Page = () => {
   const animatedRobotStyle = useAnimatedStyle(() => {
     return {
       transform: [{ scale: robotScale.value }]
+    };
+  });
+
+  const animatedDeleteStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: deleteScale.value }, {translateY: "-45%"}, {translateX: width <550 ? "220%" : "250%"}],
+      opacity: deleteScale.value
+    };
+  });
+
+  const animatedPopupStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: popupScale.value }]
     };
   });
 
@@ -210,16 +247,20 @@ const Page = () => {
     if (!recording) return;
 
     try {
-      Speech.speak("Got your command. Hold on, one second", {
-        language: 'en-US',
-        pitch: 0.9,
-        rate: 0.9,
-        voice: "com.apple.ttsbundle.Samantha-compact",
-      });
+      setTimeout(()=>{
+              Speech.speak("ok, wait a second !!!", {
+                language: 'en-US',
+                voice: 'com.apple.ttsbundle.Karen-compact', // iOS example
+                rate: 0.8,
+                pitch: 30,
+              });
+      },1000)
 
       scale.value = withSpring(1);
       setIsRecording(false);
       setIsProcessing(true);
+      setProcessingStep(0); // Start with recognizing
+      
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       setRecording(null);
@@ -232,6 +273,8 @@ const Page = () => {
       if (finalUrl) {
         setAudioUrl(finalUrl);
       }
+
+      setProcessingStep(1); // Move to processing
 
       const response = await axios.post('http://192.168.29.175:3000/extract', {
         audioUrl: finalUrl || '',
@@ -248,11 +291,13 @@ const Page = () => {
       setTranscription(transcript);
       const isTodoHere = await isTodo(transcript);
 
-      Speech.speak(`I'll create a ${isTodoHere ? "todo" : "note"} for you using Gemini AI`, {
+      setProcessingStep(2); // Move to creating
+
+      Speech.speak(`I've created a ${isTodoHere ? "todo" : "note"} for you`, {
         language: 'en-US',
-        pitch: 0.9,
-        rate: 0.9,
-        voice: "com.apple.ttsbundle.Samantha-compact",
+        voice: 'com.apple.ttsbundle.Karen-compact',
+        rate: 0.8,
+        pitch: 30,
       });
 
       await GenerateContent(isTodoHere, transcript);
@@ -266,9 +311,9 @@ const Page = () => {
       console.error('Error stopping recording:', error);
       Speech.speak("I encountered an error while processing your request", {
         language: 'en-US',
-        pitch: 0.9,
-        rate: 0.9,
-        voice: "com.apple.ttsbundle.Samantha-compact",
+        voice: 'com.apple.ttsbundle.Karen-compact',
+        rate: 0.8,
+        pitch: 30,
       });
       Alert.alert('Error', 'Failed to stop recording.');
       setIsRecording(false);
@@ -281,10 +326,15 @@ const Page = () => {
     router.push(contentType === 'todo' ? '/todo/yes/List' : '/note/yes/List');
   };
 
+  const handleNavigation = (route) => {
+    setShowPopup(false);
+    router.push(route);
+  };
+
   if (!fontsLoaded) {
     return (
-      <View style={styles.container}>
-        <Text>Loading fonts...</Text>
+      <View style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
+        <ActivityIndicator size="large" color="#00FFFF" />
       </View>
     );
   }
@@ -299,27 +349,74 @@ const Page = () => {
         domStorageEnabled={true}
       />
       
-      {isProcessing && (
+      { isProcessing && (
         <View style={styles.processingOverlay}>
           <Animated.View style={[styles.robotContainer, animatedRobotStyle]}>
             <MaterialIcons name="smart-toy" size={60} color="#00FFFF" />
-            <ActivityIndicator size="large" color="#00FFFF" style={{marginVertical: 20}} />
-            <Text style={[styles.processingText, {fontFamily: 'Orbitron'}]}>
-              Wait creating a {contentType || 'note/todo'}...
-            </Text>
+            <View style={styles.processingSteps}>
+              <View style={styles.stepContainer}>
+                <Feather 
+                  name={processingStep >= 0 ? "check-circle" : "circle"} 
+                  size={24} 
+                  color={processingStep >= 0 ? "#00FF00" : "#666"}
+                />
+                <Text style={[styles.stepText, {color: processingStep >= 0 ? "#00FF00" : "#666"}]}>
+                  Recognizing Speech
+                </Text>
+              </View>
+              <View style={styles.stepContainer}>
+                <Feather 
+                  name={processingStep >= 1 ? "check-circle" : "circle"} 
+                  size={24} 
+                  color={processingStep >= 1 ? "#00FF00" : "#666"}
+                />
+                <Text style={[styles.stepText, {color: processingStep >= 1 ? "#00FF00" : "#666"}]}>
+                  Processing Data
+                </Text>
+              </View>
+              <View style={styles.stepContainer}>
+                <Feather 
+                  name={processingStep >= 2 ? "check-circle" : "circle"} 
+                  size={24} 
+                  color={processingStep >= 2 ? "#00FF00" : "#666"}
+                />
+                <Text style={[styles.stepText, {color: processingStep >= 2 ? "#00FF00" : "#666"}]}>
+                  Creating {contentType || 'Note/Todo'}
+                </Text>
+              </View>
+            </View>
           </Animated.View>
         </View>
       )}
 
       {showPopup && latestContent && (
-        <TouchableOpacity 
-          style={styles.popup}
-          onPress={handlePopupClick}
+        <Animated.View 
+          entering={SlideInDown.springify().damping(15)}
+          exiting={SlideOutDown.springify().damping(15)}
+          style={[styles.popup, animatedPopupStyle]}
         >
-          <Text style={[styles.popupTitle, {fontFamily: 'Orbitron'}]}>New {contentType} Added!</Text>
-          <Text style={[styles.popupContent, {fontFamily: 'Orbitron'}]}>{latestContent}</Text>
-          <Text style={[styles.popupHint, {fontFamily: 'Orbitron'}]}>Tap to view in {contentType} list</Text>
-        </TouchableOpacity>
+          <LinearGradient
+            colors={['#000000', '#1a1a1a']}
+            style={styles.popupGradient}
+          >
+            <TouchableOpacity 
+              style={styles.popupContent}
+              onPress={handlePopupClick}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.popupTitle, {fontFamily: 'Orbitron', textShadow: '0 0 10px #00FFFF'}]}>
+                New {contentType} Added!
+              </Text>
+              <Text style={[styles.popupText, {fontFamily: 'Orbitron'}]}>
+                {latestContent}
+              </Text>
+              <View style={styles.popupBorder} />
+              <Text style={[styles.popupHint, {fontFamily: 'Orbitron'}]}>
+                Tap to view in {contentType} list
+              </Text>
+            </TouchableOpacity>
+          </LinearGradient>
+        </Animated.View>
       )}
 
       <View style={styles.buttonContainer}>
@@ -334,7 +431,7 @@ const Page = () => {
             shadowRadius: 10,
             elevation: 5
           }]}
-          onPress={() => router.push('/todo/no/List')}
+          onPress={() => handleNavigation('/todo/no/List')}
         >
           <View style={{flexDirection: 'row', alignItems: 'center'}}>
             <Text style={[styles.buttonText, {fontFamily: 'Orbitron', marginRight: 5}]}>Todos</Text>
@@ -353,7 +450,7 @@ const Page = () => {
             shadowRadius: 10,
             elevation: 5
           }]}
-          onPress={() => router.push('/note/no/List')}
+          onPress={() => handleNavigation('/note/no/List')}
         >
           <View style={{flexDirection: 'row', alignItems: 'center'}}>
             <Text style={[styles.buttonText, {fontFamily: 'Orbitron', marginRight: 5}]}>Notes</Text>
@@ -362,26 +459,63 @@ const Page = () => {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={styles.Other} onPress={isRecording ? stopListening : startListening}>
-        <Animated.View style={[styles.button, animatedButtonStyle]}>
-          <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'center'}}>
-            <MaterialCommunityIcons 
-              name={isRecording ? "microphone-off" : "microphone"} 
-              size={24} 
-              color="#E2E8F0" 
-              style={{marginRight: 8}}
-            />
-            <Text style={[styles.text, {fontFamily: 'Orbitron'}]}>
-              {isRecording ? 'Stop Recording' : 'Start Recording'}
-            </Text>
-          </View>
-          <Animated.View style={animatedUnderlineStyle} />
-        </Animated.View>
-        <Animated.View style={[animatedBackgroundStyle,{transform: [{translateY: 0}, {translateX: -2}]}]}>
-        </Animated.View>
-        <Animated.View style={[animatedBackgroundStyle,{transform: [{translateY: 0}, {translateX: 2}]}]}>
-        </Animated.View>
-      </TouchableOpacity>
+      <View style={styles.recordingControls}>
+        <TouchableOpacity style={styles.Other} activeOpacity={0.7} onPress={isRecording ? stopListening : startListening}>
+          <Animated.View style={[styles.button, animatedButtonStyle]}>
+            <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'center'}}>
+              <MaterialCommunityIcons 
+                name={isRecording ? "microphone-off" : "microphone"} 
+                size={24} 
+                color="#E2E8F0" 
+                style={{marginRight: 8}}
+              />
+              <Text style={[styles.text, {fontFamily: 'Orbitron'}]}>
+                {isRecording ? 'Stop Recording' : 'Start Recording'}
+              </Text>
+            </View>
+            <Animated.View style={animatedUnderlineStyle} />
+          </Animated.View>
+          <Animated.View style={[animatedBackgroundStyle,{transform: [{translateY: 0}, {translateX: -2}]}]}>
+          </Animated.View>
+          <Animated.View style={[animatedBackgroundStyle,{transform: [{translateY: 0}, {translateX: 2}]}]}>
+          </Animated.View>
+        </TouchableOpacity>
+
+        {isRecording && (
+          <Animated.View style={[styles.deleteButton, animatedDeleteStyle]}>
+            <TouchableOpacity onPress={async () => {
+              try {
+                if (recording) {
+                  await recording.stopAndUnloadAsync();
+                  setRecording(null);
+                }
+                setIsRecording(false);
+                Speech.speak("Recording cancelled", {
+                  language: 'en-US',
+                  pitch: 0.9,
+                  rate: 0.9,
+                  voice: "com.apple.ttsbundle.Samantha-compact",
+                });
+              } catch (error) {
+                console.error('Error cancelling recording:', error);
+                Alert.alert('Error', 'Failed to cancel recording.');
+              }
+            }}>
+              <MaterialCommunityIcons 
+                name="delete" 
+                size={30} 
+                color="#FF0000"
+                style={{
+                  shadowColor: '#FF0000',
+                  shadowOffset: {width: 0, height: 0},
+                  shadowOpacity: 0.8,
+                  shadowRadius: 10,
+                }}
+              />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+      </View>
     </View>
   );
 };
@@ -448,36 +582,61 @@ const styles = StyleSheet.create({
     bottom: '40%',
     left: '10%',
     right: '10%',
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    padding: 20,
-    borderRadius: 15,
+    borderRadius: 20,
     zIndex: 1000,
-    borderWidth: 1,
-    borderColor: '#00FFFF',
+    // overflow: 'hidden',
     shadowColor: '#00FFFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 0.8,
+    shadowRadius: 12,
+    elevation: 10,
   },
-  popupTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    textAlign: 'center',
+  popupGradient: {
+    borderRadius: 20,
+    padding: 2,
+    borderWidth: 2,
+    borderColor: '#00FFFF',
   },
   popupContent: {
-    color: '#E2E8F0',
-    fontSize: 14,
-    marginBottom: 10,
+    padding: 20,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    borderRadius: 18,
+  },
+  popupBorder: {
+    height: 2,
+    backgroundColor: '#00FFFF',
+    marginVertical: 10,
+    boxShadow: '0 0 10px #00FFFF',
+  },
+  popupTitle: {
+    color: '#00FFFF',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 12,
     textAlign: 'center',
+    textShadowColor: '#00FFFF',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
+  popupText: {
+    color: '#E2E8F0',
+    fontSize: 16,
+    marginBottom: 12,
+    textAlign: 'center',
+    lineHeight: 24,
   },
   popupHint: {
     color: '#00FFFF',
-    fontSize: 12,
+    fontSize: 14,
     fontStyle: 'italic',
     textAlign: 'center',
+    opacity: 0.8,
+    textShadowColor: '#00FFFF',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 5,
   },
   processingOverlay: {
     position: 'absolute',
@@ -497,11 +656,44 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 2,
     borderColor: '#00FFFF',
+    shadowColor: '#00FFFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 20,
   },
-  processingText: {
-    color: '#00FFFF',
+  processingSteps: {
+    marginTop: 20,
+    width: '100%',
+  },
+  stepContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 10,
+  },
+  stepText: {
+    marginLeft: 10,
     fontSize: 16,
-    textAlign: 'center',
+    fontFamily: 'Orbitron',
+  },
+  recordingControls: {
+    position: 'absolute',
+    top: '70%',
+    left: '50%',
+    transform: [{ translateX: "-50%" }],
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  deleteButton: {
+    position: 'absolute',
+    transform : [{translateY : "-100%"}],
+    left: '50%',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    padding: 10,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: '#FF0000',
   }
 });
 
