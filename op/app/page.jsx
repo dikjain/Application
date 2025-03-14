@@ -6,9 +6,10 @@ import { GenerateContent } from './(api)/extract.api';
 import axios from 'axios';
 import { AntDesign, MaterialCommunityIcons, MaterialIcons, Feather } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
-import linearGradient, { LinearGradient } from "expo-linear-gradient"
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, usePathname } from 'expo-router';
 import * as Speech from 'expo-speech';
+import { registerForPushNotificationsAsync } from './(notification)/notification';
 import { useFonts } from 'expo-font';
 
 import Animated, { 
@@ -23,7 +24,8 @@ import Animated, {
   FadeIn,
   FadeOut,
   SlideInDown,
-  SlideOutDown
+  SlideOutDown,
+  Easing
 } from 'react-native-reanimated';
 
 const { width, height } = Dimensions.get('window');
@@ -43,32 +45,37 @@ const Page = () => {
   const [contentType, setContentType] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [processingStep, setProcessingStep] = useState(0); // 0: recognizing, 1: processing, 2: creating
+  const [processingStep, setProcessingStep] = useState(0);
   const webViewRef = useRef(null);
 
   const scale = useSharedValue(1);
-  const pulseAnim = useSharedValue(1);
   const colorProgress = useSharedValue(0);
   const robotScale = useSharedValue(1);
   const popupScale = useSharedValue(1);
   const deleteScale = useSharedValue(0);
 
   useEffect(() => {
+    
     if (isRecording) {
       deleteScale.value = withSpring(1);
     } else {
       deleteScale.value = withSpring(0);
     }
   }, [isRecording]);
-
+  
   useEffect(() => {
-    if (showPopup) {
-      popupScale.value = withSequence(
-        withSpring(1.1),
-        withSpring(1)
-      );
-    }
-  }, [showPopup]);
+    const initNotifications = async () => {
+      try {
+        const token = await registerForPushNotificationsAsync();
+        console.log("Notification token:", token);
+      } catch (error) {
+        console.error("Error setting up notifications:", error);
+      }
+    };
+    
+    initNotifications();
+  }, []);
+
 
   useEffect(() => {
     colorProgress.value = withRepeat(
@@ -209,6 +216,7 @@ const Page = () => {
     };
   });
 
+
   const startListening = async () => {
     try {
       const { status } = await Audio.requestPermissionsAsync();
@@ -243,16 +251,18 @@ const Page = () => {
     }
   };
 
+
+
   const stopListening = async () => {
     if (!recording) return;
 
     try {
       setTimeout(()=>{
               Speech.speak("ok, wait a second !!!", {
-                language: 'en-US',
-                voice: 'com.apple.ttsbundle.Karen-compact', // iOS example
-                rate: 0.8,
-                pitch: 30,
+                    language: 'en-US',
+                  pitch: 0.9,
+                  rate: 0.9,
+                  voice: "com.apple.ttsbundle.Samantha-compact",
               });
       },1000)
 
@@ -294,10 +304,10 @@ const Page = () => {
       setProcessingStep(2); // Move to creating
 
       Speech.speak(`I've created a ${isTodoHere ? "todo" : "note"} for you`, {
-        language: 'en-US',
-        voice: 'com.apple.ttsbundle.Karen-compact',
-        rate: 0.8,
-        pitch: 30,
+                  language: 'en-US',
+                  pitch: 0.9,
+                  rate: 0.9,
+                  voice: "com.apple.ttsbundle.Samantha-compact",
       });
 
       await GenerateContent(isTodoHere, transcript);
@@ -310,10 +320,10 @@ const Page = () => {
     } catch (error) {
       console.error('Error stopping recording:', error);
       Speech.speak("I encountered an error while processing your request", {
-        language: 'en-US',
-        voice: 'com.apple.ttsbundle.Karen-compact',
-        rate: 0.8,
-        pitch: 30,
+                  language: 'en-US',
+                  pitch: 0.9,
+                  rate: 0.9,
+                  voice: "com.apple.ttsbundle.Samantha-compact",
       });
       Alert.alert('Error', 'Failed to stop recording.');
       setIsRecording(false);
@@ -340,13 +350,22 @@ const Page = () => {
   }
 
   return (
-    <View style={styles.container}>
+    <Animated.View entering={FadeIn.duration(1000)} style={styles.container}>
+      <View style={{position: 'absolute', right: 0, bottom: 0, zIndex: 1000, backgroundColor: 'rgb(0,0,0)' , margin: 27, padding: 10, width: 120, height: 30}}>
+  
+      </View>
       <WebView
         ref={webViewRef}
         source={{ uri: 'https://my.spline.design/flow-0001acc3f759cbecab9b3e10ab2368f2/' }}
         style={styles.splineBackground}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
+        javaScriptEnabled
+        domStorageEnabled
+        renderLoading={() => (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color="#00FFFF" />
+          </View>
+        )}
+        startInLoadingState
       />
       
       { isProcessing && (
@@ -404,7 +423,7 @@ const Page = () => {
               onPress={handlePopupClick}
               activeOpacity={0.8}
             >
-              <Text style={[styles.popupTitle, {fontFamily: 'Orbitron', textShadow: '0 0 10px #00FFFF'}]}>
+              <Text style={[styles.popupTitle, {fontFamily: 'Orbitron', textShadowColor: '#00FFFF', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10}]}>
                 New {contentType} Added!
               </Text>
               <Text style={[styles.popupText, {fontFamily: 'Orbitron'}]}>
@@ -419,7 +438,7 @@ const Page = () => {
         </Animated.View>
       )}
 
-      <View style={styles.buttonContainer}>
+      <Animated.View entering={FadeIn.duration(1000)} style={styles.buttonContainer}>
         <TouchableOpacity 
           style={[styles.navButton, {
             backgroundColor: '#000000',
@@ -457,7 +476,7 @@ const Page = () => {
             <AntDesign name="arrowright" style={{transform: [{rotate: '-30deg'}]}} size={20} color="#fff"  borderColor="#00ffff" borderWidth={2} borderRadius={20} />
           </View>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
 
       <View style={styles.recordingControls}>
         <TouchableOpacity style={styles.Other} activeOpacity={0.7} onPress={isRecording ? stopListening : startListening}>
@@ -516,7 +535,7 @@ const Page = () => {
           </Animated.View>
         )}
       </View>
-    </View>
+    </Animated.View>
   );
 };
 
@@ -547,7 +566,7 @@ const styles = StyleSheet.create({
   splineBackground: {
     ...StyleSheet.absoluteFillObject,
     width: width,
-    pointerEvents: 'none',
+    // pointerEvents: 'none',
     height: height,
     zIndex: 400,
     transform: [ {scale : width > 600 ? 1.5 : 1}]
@@ -617,9 +636,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 12,
     textAlign: 'center',
-    textShadowColor: '#00FFFF',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 10,
+    // textShadowColor: '#00FFFF',
+    // textShadowOffset: { width: 0, height: 0 },
+    // textShadowRadius: 10,
   },
   popupText: {
     color: '#E2E8F0',
@@ -634,9 +653,9 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     opacity: 0.8,
-    textShadowColor: '#00FFFF',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 5,
+    // textShadowColor: '#00FFFF',
+    // textShadowOffset: { width: 0, height: 0 },
+    // textShadowRadius: 5,
   },
   processingOverlay: {
     position: 'absolute',

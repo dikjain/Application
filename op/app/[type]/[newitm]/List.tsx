@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Modal, ScrollView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ import Animated, {
   SlideInRight,
   FlipInXDown
 } from 'react-native-reanimated';
+import axios from 'axios';
 
 interface ListItem {
   id: string;
@@ -92,8 +93,6 @@ const List = () => {
   const listType = type || 'todo';
   const itemColors = useMemo(() => items.map(() => getRandomNeonColor()), [items.length]);
 
-
-
   const filteredItems = useMemo(() => {
     if (listType === 'todo' && !showAll) {
       return items.filter(item => !item.completed);
@@ -142,7 +141,7 @@ const List = () => {
     fetchData();
   }, [listType, newitm]);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = useCallback(async (id: string) => {
     try {
       if (listType === 'todo') {
         await deleteTodoById(id);
@@ -153,9 +152,9 @@ const List = () => {
     } catch (error) {
       console.error(`Error deleting ${listType}:`, error);
     }
-  };
+  }, [items, listType]);
 
-  const renderItem = ({ item, index }: { item: ListItem; index: number }) => {
+  const renderItem = useCallback(({ item, index }: { item: ListItem; index: number }) => {
     const shouldAnimate = newitm === 'yes' && index === 0 && newItemAdded;
     const animationDelay = shouldAnimate ? 0 : index * 100;
     const neonColor = itemColors[index];
@@ -317,14 +316,23 @@ const List = () => {
         </Animated.View>
       );
     }
-  };
+  }, [itemColors, newitm, newItemAdded, listType, handleDelete]);
 
-  const toggleTodoComplete = (id: string) => {
-    
-    setItems(items.map(item => 
-      item.id === id ? { ...item, completed: !item.completed } : item
-    ));
-  };
+  const toggleTodoComplete = useCallback(async (id: string) => {
+    try {
+      const response = await axios.post(`http://192.168.29.175:3000/todo/toggletodo/${id}`, {
+        completed: !items.find(item => item.id === id)?.completed
+      });
+      
+      if (response.status === 200) {
+        setItems(items.map(item => 
+          item.id === id ? { ...item, completed: !item.completed } : item
+        ));
+      }
+    } catch (error) {
+      console.error("Error toggling todo completion:", error);
+    }
+  }, [items]);
 
   if (loading) {
     return (

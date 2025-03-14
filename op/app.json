@@ -35,6 +35,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       }
-    }
+    },
+    "projectId": "a9507c6c-afa1-4b44-a1ed-3c843e468fbb"
   }
 }
