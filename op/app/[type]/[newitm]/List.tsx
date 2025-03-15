@@ -105,6 +105,7 @@ const List = () => {
       setLoading(true);
       const data = await GetContent(listType === 'todo');
       
+      
       if (data) {
         const formattedData = data.map((item: ListItem) => {
           if (item.due_date) {
